@@ -4,10 +4,13 @@ import com.inad.crm.hotel.small.commons.dto.DtoInState;
 import com.inad.crm.hotel.small.dao.demographic.model.State;
 import com.inad.crm.hotel.small.utils.Constants;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 
 @Mapper(componentModel = Constants.SPRING)
 public interface StateMapper {
 
 	DtoInState stateToDtoInState(State state);
+
+	@Mapping(target = "cities", ignore = true)
 	State stateDtoInToState(DtoInState dtoInState);
 }
