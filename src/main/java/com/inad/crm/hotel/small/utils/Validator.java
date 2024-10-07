@@ -22,12 +22,4 @@ public class Validator {
 			throw new NoSuchElementsFoundException(Utils.getLocalMessage(messageSource, I18Constants.NO_ITEMS_FOUND.getKey()));
 		}
 	}
-
-	/*
-	public static void validateUserInformationOwner(final User user, String username, MessageSource messageSource) {
-		if (!user.getUsername().equals(username)) {
-			throw new ForbiddenException(Utils.getLocalMessage(messageSource, I18Constants.NO_PRIVILEGES.getKey(), ""));
-		}
-	}
-	 */
 }

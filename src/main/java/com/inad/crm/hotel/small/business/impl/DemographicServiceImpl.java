@@ -31,6 +31,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -58,9 +59,10 @@ public class DemographicServiceImpl implements IDemographicService {
 	@Override
 	public ResponseData<DtoInState> getStates() {
 		List<State> listStates = stateDao.findAll();
+		listStates.sort(Comparator.comparing(State::getName));
 		Validator.validateList(listStates, messageSource);
 		ResponseData<DtoInState> response = new ResponseData<>();
-		response.setData(listStates.stream().map(state -> stateMapper.stateToDtoInState(state)).collect(Collectors.toList()));
+		response.setData(listStates.stream().map(stateMapper::stateToDtoInState).collect(Collectors.toList()));
 		return response;
 	}
 
@@ -89,7 +91,7 @@ public class DemographicServiceImpl implements IDemographicService {
 			}
 		}
 		Validator.validatePage(pageCities, messageSource);
-		return new ResponseData<>(pageCities.getContent().stream().map(city -> cityMapper.cityToDtoInCity(city))
+		return new ResponseData<>(pageCities.getContent().stream().map(cityMapper::cityToDtoInCity)
 				.collect(Collectors.toList()), pageCities);
 	}
 
@@ -135,7 +137,7 @@ public class DemographicServiceImpl implements IDemographicService {
 			}
 		}
 		Validator.validatePage(pageColonies, messageSource);
-		return new ResponseData<>(pageColonies.getContent().stream().map(colony -> colonyMapper.colonyToDtoInColony(colony))
+		return new ResponseData<>(pageColonies.getContent().stream().map(colonyMapper::colonyToDtoInColony)
 				.collect(Collectors.toList()), pageColonies);
 	}
 
@@ -143,7 +145,7 @@ public class DemographicServiceImpl implements IDemographicService {
 	public ResponseData<DtoInColony> getAllColonies(String stateName, String cityName, String colonyName, String postalCode, Integer page, Integer pageSize) {
 		log.debug("State: {}, city: {}, colony: {}, postalCode: {}", stateName, cityName, colonyName, postalCode);
 		Pageable pageable = PageRequest.of(page, pageSize, Sort.by("name"));
-		Page<Colony> pageColonies = null;
+		Page<Colony> pageColonies;
 		List<City> listCities;
 		List<String> names = new ArrayList<>();
 
@@ -159,7 +161,7 @@ public class DemographicServiceImpl implements IDemographicService {
 			pageColonies = colonyDao.findByCityId(names, colonyName, postalCode, pageable);
 		}
 		Validator.validatePage(pageColonies, messageSource);
-		return new ResponseData<>(pageColonies.getContent().stream().map(c -> colonyMapper.colonyToDtoInColony(c)).collect(Collectors.toList()), pageColonies);
+		return new ResponseData<>(pageColonies.getContent().stream().map(colonyMapper::colonyToDtoInColony).collect(Collectors.toList()), pageColonies);
 	}
 
 }

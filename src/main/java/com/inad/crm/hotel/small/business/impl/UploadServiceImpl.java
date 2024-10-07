@@ -28,7 +28,11 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.DecimalFormat;
+import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
@@ -36,37 +40,36 @@ public class UploadServiceImpl implements IUploadService {
 
     private static final DecimalFormat decimalF = new DecimalFormat("00.00");
     private static final DecimalFormat df = new DecimalFormat("#,###");
-
+    private final AtomicInteger statesCount = new AtomicInteger(0);
+    private final AtomicInteger citiesCount = new AtomicInteger(0);
+    private final AtomicInteger coloniesCount = new AtomicInteger(0);
+    double elements = 0;
     @Autowired
     private IStateDao stateDao;
     @Autowired
     private ICityDao cityDao;
     @Autowired
     private IColonyDao colonyDao;
-
     @Autowired
     private MessageSource messageSource;
-    private Integer statesCount;
-    private Integer citiesCount;
-    private Integer coloniesCount;
 
     @Override
     public DtoInFileResponse uploadExcelFile(MultipartFile file) {
-        long timeStart = new Date().getTime();
+        final LocalDateTime timeStart = LocalDateTime.now();
         if (!Utils.hasExcelFormat(file)) {
             throw new ValidFileException(Utils.getLocalMessage(messageSource, I18Constants.NOT_VALID_EXCEL.getKey()));
         }
-        statesCount = 0;
-        citiesCount = 0;
-        coloniesCount = 0;
+        statesCount.set(0);
+        citiesCount.set(0);
+        coloniesCount.set(0);
 
         try {
             List<State> listStates = setupListStates(excelToListStates(file.getInputStream()));
-            long timeUpload = new Date().getTime();
-            String strTimeUpload = getFinishTimeStr(timeStart, timeUpload);
+            final LocalDateTime timeUpload = LocalDateTime.now();
+            final String strTimeUpload = getFinishTimeStr(timeStart, timeUpload);
             showMessagesConsole(listStates.size(), strTimeUpload);
-            saveColoniesAsync(listStates, coloniesCount);
-            return new DtoInFileResponse(df.format(statesCount), df.format(citiesCount), df.format(coloniesCount));
+            saveColoniesAsync(listStates, getColoniesCount());
+            return new DtoInFileResponse(df.format(coloniesCount), df.format(citiesCount), df.format(statesCount));
         } catch (IOException e) {
             log.error(e.getMessage());
         }
@@ -82,20 +85,20 @@ public class UploadServiceImpl implements IUploadService {
     }
 
     private List<State> setupListStates(Set<State> setState) {
-        List<State> listState = new ArrayList<>(setState);
+        final List<State> listState = new ArrayList<>(setState);
         Collections.sort(listState);
         for (State state : listState) {
-            statesCount++;
-            List<City> cities = new ArrayList<>(state.getCities());
+            incrementStatesCount();
+            final List<City> cities = new ArrayList<>(state.getCities());
             Collections.sort(cities);
             state.setCities(cities);
             if (state.getCities() != null && !state.getCities().isEmpty()) {
                 int coloniesCount = 0;
                 for (City city : state.getCities()) {
-                    citiesCount++;
+                    incrementCitiesCount();
                     setupCity(city);
                     coloniesCount = coloniesCount + city.getColonies().size();
-                    this.coloniesCount = this.coloniesCount + city.getColonies().size();
+                    incrementColoniesCount(city.getColonies().size());
                 }
                 log.debug("{} -> cities: {}, colonies: {}", state.getName(), state.getCities().size(), coloniesCount);
             }
@@ -104,29 +107,29 @@ public class UploadServiceImpl implements IUploadService {
     }
 
     private void setupCity(City city) {
-        List<Colony> colonies = new ArrayList<>(city.getColonies());
+        final List<Colony> colonies = new ArrayList<>(city.getColonies());
         Collections.sort(colonies);
         city.setColonies(colonies);
     }
 
     public Set<State> excelToListStates(InputStream input) {
         try (Workbook workbook = new XSSFWorkbook(input)) {
-            Sheet sheet = workbook.getSheet(Constants.SHEET);
-            Iterator<Row> rows = sheet.iterator();
+            final Sheet sheet = workbook.getSheet(Constants.SHEET);
+            final Iterator<Row> rows = sheet.iterator();
             int rowNumber = 0;
-            Set<State> listSetStates = new HashSet<>();
+            final Set<State> listSetStates = new HashSet<>();
             while (rows.hasNext()) {
-                Row currentRow = rows.next();
+                final Row currentRow = rows.next();
                 if (rowNumber == 0) { // Skip header
                     rowNumber++;
                     continue;
                 }
-                Iterator<Cell> cellsInRow = currentRow.iterator();
-                DtoInFileExcel file = reedCells(cellsInRow);
-                String nameState = file.getState();
-                String nameCity = file.getCity();
-                String nameColony = file.getColony();
-                String codePostal = file.getCodePostal();
+                final Iterator<Cell> cellsInRow = currentRow.iterator();
+                final DtoInFileExcel file = reedCells(cellsInRow);
+                final String nameState = file.getState();
+                final String nameCity = file.getCity();
+                final String nameColony = file.getColony();
+                final String codePostal = file.getCodePostal();
                 setStateFromSetStates(listSetStates, nameState, nameCity, nameColony, codePostal);
             }
             log.debug("states: {}", listSetStates.size());
@@ -138,10 +141,10 @@ public class UploadServiceImpl implements IUploadService {
     }
 
     private DtoInFileExcel reedCells(Iterator<Cell> cellsInRow) {
-        DtoInFileExcel file = new DtoInFileExcel();
+        final DtoInFileExcel file = new DtoInFileExcel();
         int cellIdx = 0;
         while (cellsInRow.hasNext()) {
-            Cell currentCell = cellsInRow.next();
+            final Cell currentCell = cellsInRow.next();
             switch (cellIdx) {
                 case 1:
                     file.setCodePostal(Utils.removeAccents(currentCell.getStringCellValue()));
@@ -193,46 +196,53 @@ public class UploadServiceImpl implements IUploadService {
     }
 
     private Colony setColony(String nameColony, String codePostal) {
-        Colony colony = new Colony();
+        final Colony colony = new Colony();
         colony.setName(nameColony);
         colony.setPostalCode(codePostal);
         return colony;
     }
 
-    private String getFinishTimeStr(long timeStart, long timeFinish) {
-        if (timeStart >= timeFinish) {
-            return "";
-        }
-        long total = timeFinish - timeStart;
-        int seconds = (int) (total / 1000);
-
-        int minutes = seconds / 60;
-        seconds = seconds - (minutes * 60);
-
-        int milliSeconds = (int) total - (seconds * 1000);
-        return String.valueOf(minutes).concat(":").concat(String.valueOf(seconds).concat(":").concat(String.valueOf(milliSeconds)));
+    private String getFinishTimeStr(LocalDateTime timeStart, LocalDateTime timeFinish) {
+        final LocalDateTime dif = timeFinish.minusSeconds(timeStart.getSecond());
+        return dif.getHour() + ":" + dif.getMinute() + ":" + dif.getSecond();
     }
 
     private void saveColoniesAsync(List<State> listStates, int totalElements) {
-        new Thread(() -> {
+        log.debug("Start load to DBB");
+        log.debug("00.00%");
+        for (State state : listStates) {
+            ExecutorService service = null;
             try {
-                Thread.sleep(3000);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-            log.debug("Start load to DBB");
-            log.debug("00.00%");
-            double elements = 0;
-            for (State state : listStates) {
-                state.getCities().forEach(city -> {
-                    colonyDao.saveAll(city.getColonies());
-                    cityDao.save(city);
+                service = Executors.newSingleThreadExecutor();
+                service.submit(() -> {
+                    state.getCities().forEach(city -> {
+                        colonyDao.saveAll(city.getColonies());
+                        cityDao.save(city);
+                    });
+                    stateDao.save(state);
+                    elements += state.getCities().stream().mapToInt(city -> city.getColonies().size()).sum();
+                    double progress = (elements * 100) / (double) totalElements;
+                    log.debug("{}% -> {}, {}/{}", decimalF.format(progress), state.getName(), df.format(elements), df.format(totalElements));
                 });
-                stateDao.save(state);
-                elements += state.getCities().stream().mapToInt(city -> city.getColonies().size()).sum();
-                double progress = (elements * 100) / (double) totalElements;
-                log.debug("{}% -> {}, {}/{}", decimalF.format(progress), state.getName(), df.format(elements), df.format(totalElements));
+            } finally {
+                if (service != null) service.shutdown();
             }
-        }).start();
+        }
+    }
+
+    private synchronized int getColoniesCount() {
+        return coloniesCount.get();
+    }
+
+    private synchronized void incrementStatesCount() {
+        statesCount.incrementAndGet();
+    }
+
+    private synchronized void incrementCitiesCount() {
+        citiesCount.incrementAndGet();
+    }
+
+    private synchronized void incrementColoniesCount(int increment) {
+        coloniesCount.set(coloniesCount.get() + increment);
     }
 }
